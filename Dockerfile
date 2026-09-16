@@ -1,14 +1,27 @@
 FROM python:3.11-slim
 
+# 1. Actualización de paquetes para corregir CVEs del sistema
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-RUN useradd -m appuser && chown -R appuser:appuser /app
+# 2. Instalar dependencias como ROOT (aprovecha la caché si no cambia requirements.txt)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 3. Crear usuario no privilegiado y asignar permisos
+RUN useradd -m -u 10001 appuser && \
+    chown -R appuser:appuser /app
+
+# 4. Cambiar al usuario sin privilegios ANTES de copiar el código fuente
 USER appuser
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app.py .
+# 5. Copiar el código fuente con el propietario correcto
+COPY --chown=appuser:appuser app.py .
 
 EXPOSE 8080
 
