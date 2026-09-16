@@ -1,0 +1,85 @@
+name: CD - Deploy to Dev
+
+on:
+  push:
+    branches: [ "dev" ]
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  SERVICE_NAME: app-dev
+  REGISTRY_URL: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-repo-dev/app-dev
+
+jobs:
+  build-scan-deploy-dev:
+    name: 🚀 Build, Container Scan & Deploy (DEV)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generar Tag BUILD-HASH
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          BUILD_TAG="${{ github.run_number }}-${SHORT_SHA}"
+          echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_NAME=${{ env.REGISTRY_URL }}:${BUILD_TAG}" >> $GITHUB_ENV
+
+      - name: Autenticación GCP mediante WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Autenticar Docker en GCP
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - name: Construir Imagen Docker
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }} -t ${{ env.REGISTRY_URL }}:latest .
+
+      - name: Escaneo de Imagen (Trivy Image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Push a Artifact Registry
+        run: |
+          docker push ${{ env.IMAGE_NAME }}
+          docker push ${{ env.REGISTRY_URL }}:latest
+
+      - name: Desplegar en Cloud Run (DEV)
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_NAME }}
+          flags: "--allow-unauthenticated"
+          env_vars: |
+            ENVIRONMENT=development
+            APP_VERSION=${{ env.BUILD_TAG }}
+
+  dast-scan:
+    name: 🛡️ DAST Scan (OWASP ZAP)
+    needs: build-scan-deploy-dev
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Ejecutar ZAP Baseline Scan
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "Ejecutando escaneo DAST en $URL..."
+          docker run -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t $URL -I

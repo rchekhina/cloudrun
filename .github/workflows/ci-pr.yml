@@ -1,0 +1,54 @@
+name: CI & DevSecOps (Pre-Merge)
+
+on:
+  pull_request:
+    branches: [ "dev", "main" ]
+
+jobs:
+  lint-and-unit-tests:
+    name: 🧪 Lint, Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest pytest-cov -r requirements.txt
+
+      - name: Linter (Flake8)
+        run: flake8 app.py test_app.py --max-line-length=88
+
+      - name: Pruebas Unitarias y Cobertura (Mínimo 80%)
+        run: pytest --cov=app --cov-fail-under=80 test_app.py
+
+  secops-pre-merge:
+    name: 🛡️ DevSecOps Pre-Merge (Secretos, SAST, SCA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Escaneo de Secretos (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Análisis Estático SAST (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/ci
+
+      - name: Análisis SCA de Dependencias (Trivy FS)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'

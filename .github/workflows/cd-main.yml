@@ -1,0 +1,67 @@
+name: CD - Deploy to Production
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  SERVICE_NAME: app-prod
+  REGISTRY_URL: europe-west1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/app-repo-prod/app-prod
+
+jobs:
+  build-scan-deploy-prod:
+    name: 🚢 Build, Container Scan & Deploy (PROD)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generar Tag de Producción
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          BUILD_TAG="prod-${{ github.run_number }}-${SHORT_SHA}"
+          echo "BUILD_TAG=${BUILD_TAG}" >> $GITHUB_ENV
+          echo "IMAGE_NAME=${{ env.REGISTRY_URL }}:${BUILD_TAG}" >> $GITHUB_ENV
+
+      - name: Autenticación GCP mediante WIF
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Autenticar Docker
+        run: gcloud auth configure-docker europe-west1-docker.pkg.dev --quiet
+
+      - name: Construir Imagen
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }} -t ${{ env.REGISTRY_URL }}:latest .
+
+      - name: Escaneo Estricto de Imagen (Trivy Image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Push a Artifact Registry
+        run: |
+          docker push ${{ env.IMAGE_NAME }}
+          docker push ${{ env.REGISTRY_URL }}:latest
+
+      - name: Desplegar en Cloud Run (PROD)
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_NAME }}
+          flags: "--allow-unauthenticated"
+          env_vars: |
+            ENVIRONMENT=production
+            APP_VERSION=${{ env.BUILD_TAG }}
