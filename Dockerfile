@@ -10,7 +10,7 @@ WORKDIR /app
 
 # 2. Instalar dependencias como ROOT (aprovecha la caché si no cambia requirements.txt)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+RUN pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1" wheel && \
     pip install --no-cache-dir -r requirements.txt
 
 # 3. Crear usuario no privilegiado y asignar permisos
