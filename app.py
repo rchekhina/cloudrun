@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 
-app = FastAPI(title="Cloud Run App")
+app = FastAPI(title="Cloud Run App TEST")
 
 # 🚨 DESCOMENTAR PARA HACER FALLAR GITLEAKS (Detectará una API Key expuesta)
 # GCP_API_KEY_EXPOSED = "AIzaSyD-FakeSecretKeyForTestingGitleaks12345"
