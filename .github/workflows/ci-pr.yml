@@ -27,7 +27,7 @@ jobs:
       - name: Pruebas Unitarias y Cobertura (Mínimo 80%)
         run: pytest --cov=app --cov-fail-under=80 test_app.py
 
-secops-pre-merge:
+  secops-pre-merge:
     name: 🛡️ DevSecOps Pre-Merge (Secretos, SAST, SCA)
     runs-on: ubuntu-latest
     steps:
@@ -45,11 +45,9 @@ secops-pre-merge:
         with:
           config: p/ci
 
-      # 1. Construir la imagen localmente para el escaneo
       - name: Build Docker Image
         run: docker build -t app-test:${{ github.sha }} .
 
-      # 2. Escanear la IMAGEN completa (OS + librerías Python)
       - name: Análisis SCA de Imagen Docker (Trivy Image)
         uses: aquasecurity/trivy-action@master
         with:
@@ -57,5 +55,5 @@ secops-pre-merge:
           image-ref: 'app-test:${{ github.sha }}'
           format: 'table'
           exit-code: '1'
-          ignore-unfixed: true          # Omitir vulnerabilidades de Debian sin parche disponible
+          ignore-unfixed: true
           severity: 'HIGH,CRITICAL'
