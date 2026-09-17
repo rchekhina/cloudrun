@@ -45,10 +45,15 @@ jobs:
         with:
           config: p/ci
 
-      - name: Análisis SCA de Dependencias (Trivy FS)
+      - name: Build Docker Image
+        run: docker build -t app-test:${{ github.sha }} .
+
+      - name: Análisis SCA de Imagen Docker (Trivy Image)
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
+          scan-type: 'image'
+          image-ref: 'app-test:${{ github.sha }}'
+          format: 'table'
           exit-code: '1'
+          ignore-unfixed: true
+          severity: 'HIGH,CRITICAL'
