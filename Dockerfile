@@ -1,29 +1,32 @@
-FROM python:3.13-slim
-
-# 1. Actualización de paquetes para corregir CVEs del sistema
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
+FROM python:3.13-alpine
+ 
+# Corrige CVEs del SO base
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
+ 
 WORKDIR /app
-
-# 2. Instalar dependencias como ROOT (aprovecha la caché si no cambia requirements.txt)
+ 
 COPY requirements.txt .
+ 
+# Ninguna de estas dependencias necesita compilar C-extensions en Alpine:
+# fastapi, uvicorn, pytest, pytest-cov y httpx son puro Python, y msgpack
+# publica wheels musllinux precompilados. No hace falta build-base/gcc.
 RUN pip install --no-cache-dir --upgrade pip wheel && \
     pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --upgrade "setuptools>=78.1.1" "msgpack>=1.2.1"
-
-# 3. Crear usuario no privilegiado y asignar permisos
-RUN useradd -m -u 10001 appuser && \
-    chown -R appuser:appuser /app
-
-# 4. Cambiar al usuario sin privilegios ANTES de copiar el código fuente
+    pip install --no-cache-dir --upgrade "setuptools>=78.1.1"
+ 
+# Usuario no privilegiado (sintaxis Alpine)
+RUN addgroup -g 10001 appgroup && \
+    adduser -D -u 10001 -G appgroup appuser && \
+    chown -R appuser:appgroup /app
+ 
 USER appuser
-
-# 5. Copiar el código fuente con el propietario correcto
-COPY --chown=appuser:appuser app.py .
-
+ 
+COPY --chown=appuser:appgroup app.py .
+ 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+ 
 EXPOSE 8080
-
+ 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+
